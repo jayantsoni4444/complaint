@@ -1,9 +1,9 @@
 {
   "name": "user-attendance-backend",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "start": "concurrently \"node collection.js\" \"node expenses.js\" \"node sales.js\""
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
@@ -18,8 +18,5 @@
     "multer": "^2.0.2",
     "node-cache": "^5.1.2",
     "node-fetch": "^3.3.2"
-  },
-  "devDependencies": {
-    "concurrently": "^9.2.1"
   }
 }
