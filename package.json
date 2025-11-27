@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "pagination": "node pagination.js"
+    "start": "node pagination.js"
   },
   "keywords": [],
   "author": "",
@@ -20,4 +19,4 @@
     "node-cache": "^5.1.2",
     "node-fetch": "^3.3.2"
   }
-}
+}  
