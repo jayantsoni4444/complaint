@@ -19,4 +19,4 @@
     "node-cache": "^5.1.2",
     "node-fetch": "^3.3.2"
   }
-}  in this code i want to run two pages first is server.js and second is pagination.js
+}  
