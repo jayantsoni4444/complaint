@@ -1,130 +1,187 @@
-// server.js
-const express = require("express");
-const mongoose = require("mongoose");
-const cors = require("cors");
+const express = require('express');
+const mongoose = require('mongoose');
+const bodyParser = require('body-parser');
+const cors = require('cors');
+const compression = require('compression');
+const NodeCache = require('node-cache');
 
+// Initialize Express app
 const app = express();
+const cache = new NodeCache({ stdTTL: 3600 });   // Cache for 1 hour
+
+// Middleware
+app.use(bodyParser.json());
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(compression());
 
-// ===============================
-// MongoDB Atlas Connection
-// ===============================
-// Replace <username>, <password>, and <dbname> with your Atlas values
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  "mongodb+srv://service:services1234@cluster0.wxa147v.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
-//   "mongodb+srv://jayantsoni4382:js%40workdb@cluster0.jjjc03f.mongodb.net/attendanceDB?retryWrites=true&w=majority";
-
-console.log("🔗 Connecting to:", MONGODB_URI);
+// MongoDB Atlas connection
+const dbURI =
+  "mongodb+srv://oshan:oshan%40work1234@cluster0.2txxi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
 
 mongoose
-  .connect(MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch((err) => console.error("❌ MongoDB connection error:", err));
+  .connect(dbURI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log("Connected to MongoDB Atlas"))
+  .catch((err) => {
+    console.error("Failed to connect to MongoDB:", err);
+    process.exit(1);
+  });
 
-// ===============================
-// Schema
-// ===============================
-const selfieSchema = new mongoose.Schema({
-  username: String,
-  image: String,
+
+// Task Schema
+const taskSchema = new mongoose.Schema({
   name: String,
-  address: String,
-  number: String,
-  From: String,
-  To: String,
-  Location: String,
-  MobileNo: String,
-  epnbd: String,
-  inv: String,
-  bat: String,
-  pan: String,
-  Inverter: String,
-  Battery: String,
-  Panel: String,
-  Mode: String,
-  km: String,
-  Amount: String,
-  remarks: String,
+  email: String,
+  phone: String,
+  altPhone: String,
+
+  state: String,
+  city: String,
+  pincode: String,
+  location: String,
+  landmark: String,
+
+  product: String,
+  selectedModel: Object,
+  serialNumber: String,
+  warrantyStatus: Object,
+  purchaseDate: String,
+  installationDate: String,
+
+  status: String,
+  complaintNumber: String,
+  callType: String,
+  additionalStatus: String,
+  callSource: String,
+  taskStatus: String,
+
+  assignEngineer: String,
+  contactNo: String,
+
+  dealer: String,
+  complaintNotes: String,
+  enginnerNotes: String,
+  customerFeedback: String,
+
+  asp: String,
+  aspName: String,
+  actionTaken: String,
+
   date: String,
-  location: {
-    latitude: Number,
-    longitude: Number,
-  },
-  timestamp: { type: Date, default: Date.now },
+  images: [String]
 });
 
-const Selfie = mongoose.model("Selfie", selfieSchema);
+const Task = mongoose.model("Task", taskSchema);
 
-// ===============================
-// Routes
-// ===============================
-app.post("/api/selfie", async (req, res) => {
+
+
+// ==================================================================
+//  ADD TASK
+// ==================================================================
+app.post("/tasks", async (req, res) => {
   try {
-    const selfie = new Selfie(req.body);
+    const task = new Task(req.body);
+    await task.save();
 
-    if (!selfie.username || !selfie.image || !selfie.name || !selfie.address) {
-      return res.status(400).json({ error: "Missing required fields." });
+    // Clear cache after adding new data
+    cache.del("tasks_page");
+
+    res.status(201).json(task);
+  } catch (err) {
+    console.error("Error saving task:", err);
+    res.status(500).json({ error: "Failed to save task." });
+  }
+});
+
+
+// ==================================================================
+//  GET TASKS WITH PAGINATION + CACHING
+// ==================================================================
+app.get("/tasks", async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1; // current page
+    const limit = parseInt(req.query.limit) || 20; // items per page
+    const skip = (page - 1) * limit;
+
+    const cacheKey = `tasks_page_${page}`;
+
+    // Serve from cache
+    if (cache.has(cacheKey)) {
+      return res.status(200).json(cache.get(cacheKey));
     }
 
-    await selfie.save();
-    res.json(selfie);
+    const totalTasks = await Task.countDocuments();
+    const tasks = await Task.find().skip(skip).limit(limit).lean();
+
+    const responseData = {
+      tasks,
+      totalTasks,
+      currentPage: page,
+      totalPages: Math.ceil(totalTasks / limit),
+    };
+
+    // Save in cache
+    cache.set(cacheKey, responseData);
+
+    res.status(200).json(responseData);
   } catch (err) {
-    console.error("POST error:", err);
-    res.status(500).json({ error: "Failed to save submission." });
+    console.error("Error fetching tasks:", err);
+    res.status(500).json({ error: "Failed to fetch tasks." });
   }
 });
 
-app.get("/api/selfies", async (req, res) => {
-  try {
-    const { username } = req.query;
-    const query = username ? { username } : {};
-    const data = await Selfie.find(query).sort({ timestamp: -1 });
-    res.json(data);
-  } catch (err) {
-    console.error("GET error:", err);
-    res.status(500).json({ error: "Failed to fetch data." });
-  }
-});
 
-app.put("/api/selfie/:id", async (req, res) => {
+// ==================================================================
+//  UPDATE TASK
+// ==================================================================
+app.put("/tasks/:id", async (req, res) => {
   try {
-    const updated = await Selfie.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-    });
+    const task = await Task.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    );
 
-    if (!updated) {
-      return res.status(404).json({ error: "Selfie not found." });
+    if (!task) {
+      return res.status(404).json({ error: "Task not found" });
     }
 
-    res.json(updated);
+    // Clear cache after update
+    cache.flushAll();
+
+    res.status(200).json(task);
   } catch (err) {
-    console.error("PUT error:", err);
-    res.status(500).json({ error: "Failed to update selfie." });
+    console.error("Error updating task:", err);
+    res.status(500).json({ error: "Failed to update task." });
   }
 });
 
-app.delete("/api/selfie/:id", async (req, res) => {
+
+// ==================================================================
+//  DELETE TASK
+// ==================================================================
+app.delete("/tasks/:id", async (req, res) => {
   try {
-    const deleted = await Selfie.findByIdAndDelete(req.params.id);
-    if (!deleted) {
-      return res.status(404).json({ error: "Selfie not found." });
+    const task = await Task.findByIdAndDelete(req.params.id);
+
+    if (!task) {
+      return res.status(404).json({ error: "Task not found" });
     }
-    res.json({ message: "Selfie deleted." });
+
+    // Clear cache after deletion
+    cache.flushAll();
+
+    res.status(200).json({ message: "Task deleted" });
   } catch (err) {
-    console.error("DELETE error:", err);
-    res.status(500).json({ error: "Failed to delete selfie." });
+    console.error("Error deleting task:", err);
+    res.status(500).json({ error: "Failed to delete task." });
   }
 });
 
-// ===============================
-// Start Server (Railway Port)
-// ===============================
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () =>
-  console.log(`🚀 Server running on http://localhost:${PORT}`)
-);
+
+// ==================================================================
+//  START SERVER
+// ==================================================================
+const PORT = process.env.PORT || 5002;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
