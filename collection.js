@@ -1,91 +1,154 @@
-// server.js
+
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-require("dotenv").config();
+const compression = require("compression");
+const NodeCache = require("node-cache");
 
 const app = express();
-app.use(cors());
-app.use(express.json());
 
-// 🔹 MongoDB Connection
+
+app.use(cors());
+app.use(express.json({ limit: "10mb" }));
+app.use(compression()); // gzip compression for faster network transfer
+
+// Simple in-memory cache (TTL = 5 minutes)
+const cache = new NodeCache({ stdTTL: 300 });
+
+// ===============================
+// 🔗 MongoDB Connection
+// ===============================
+const MONGODB_URI =
+  process.env.MONGODB_URI ||
+  "mongodb+srv://jayantsoni4382:js%40workdb@cluster0.jjjc03f.mongodb.net/attendanceDB?retryWrites=true&w=majority";
+
 mongoose
-  .connect(process.env.MONGO_URI || "mongodb://127.0.0.1:27017/collectionDB", {
+  .connect(MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
+    maxPoolSize: 10, // increase pool for concurrent requests
   })
-  .then(() => console.log("✅ MongoDB connected"))
-  .catch((err) => console.error("❌ MongoDB error:", err));
+  .then(() => console.log("✅ MongoDB Connected Successfully"))
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// 🔹 Schema & Model
-const collectionSchema = new mongoose.Schema(
-  {
-    receiptNo: { type: String, required: true },
-    date: { type: Date, required: true },
-    customer: { type: String, required: true },
-    paymentMode: {
-      type: String,
-      enum: ["Cash", "UPI", "Bank"],
-      default: "Cash",
-    },
-    invoiceNo: { type: String },
-    amountReceived: { type: Number, required: true },
-    balanceDue: { type: Number, default: 0 },
-    collector: { type: String },
-    remarks: { type: String },
+// ===============================
+// 📦 Schema & Model
+// ===============================
+const selfieSchema = new mongoose.Schema({
+  username: String,
+  name: String,
+  address: String,
+  number: String,
+  From: String,
+  To: String,
+  Location: String,
+  MobileNo: String,
+  epnbd: String,
+  inv: String,
+  bat: String,
+  pan: String,
+  Inverter: String,
+  Battery: String,
+  Panel: String,
+  Mode: String,
+  km: String,
+  Amount: String,
+  remarks: String,
+  date: String,
+  location: {
+    latitude: Number,
+    longitude: Number,
   },
-  { timestamps: true }
-);
+  timestamp: { type: Date, default: Date.now },
+});
 
-const Collection = mongoose.model("collections", collectionSchema);
+// ✅ Add important indexes for speed
+selfieSchema.index({ username: 1 });
+selfieSchema.index({ date: 1 });
+selfieSchema.index({ timestamp: -1 });
 
-// 🔹 Routes
+const Selfie = mongoose.model("Selfie", selfieSchema);
 
-// Get all entries
-app.get("/api/collections", async (req, res) => {
+// ===============================
+// 🧠 API Routes
+// ===============================
+
+// ✅ Add new DSR Entry
+app.post("/api/selfie", async (req, res) => {
   try {
-    const data = await Collection.find().sort({ createdAt: -1 });
+    const selfie = new Selfie(req.body);
+    const saved = await selfie.save();
+
+    // clear cache for freshness
+    cache.flushAll();
+
+    res.status(201).json(saved);
+  } catch (err) {
+    console.error("❌ Save error:", err);
+    res.status(500).json({ error: "Error saving data" });
+  }
+});
+
+// ✅ Get All Selfies (Optionally filtered by month)
+app.get("/api/selfies", async (req, res) => {
+  try {
+    const { username, month } = req.query;
+    const cacheKey = `selfies_${username || "all"}_${month || "all"}`;
+
+    // ⚡ Serve from cache if available
+    if (cache.has(cacheKey)) {
+      console.log("⚡ Cache Hit");
+      return res.json(cache.get(cacheKey));
+    }
+
+    console.log("🐢 Cache Miss - Fetching from DB");
+
+    const query = {};
+    if (username) query.username = username;
+
+    // 🔹 Filter by month (e.g. 2025-10)
+    if (month) {
+      const start = new Date(`${month}-01T00:00:00Z`);
+      const end = new Date(start);
+      end.setMonth(end.getMonth() + 1);
+      query.timestamp = { $gte: start, $lt: end };
+    }
+
+    // ⚡ Fetch lean (plain JS objects) + projection (only needed fields)
+    const data = await Selfie.find(query)
+      .select(
+        "username name address From To Location MobileNo epnbd inv bat pan Inverter Battery Panel Mode km Amount remarks date location timestamp"
+      )
+      .sort({ timestamp: -1 })
+      .lean();
+
+    // 🧠 Cache result
+    cache.set(cacheKey, data);
+
     res.json(data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("❌ Fetch error:", err);
+    res.status(500).json({ error: "Error fetching data" });
   }
 });
 
-// Add new entry
-app.post("/api/collections", async (req, res) => {
+// ✅ Delete Entry by ID
+app.delete("/api/selfie/:id", async (req, res) => {
   try {
-    const newEntry = new Collection(req.body);
-    const saved = await newEntry.save();
-    res.json(saved);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
+    await Selfie.findByIdAndDelete(req.params.id);
 
-// Update entry
-app.put("/api/collections/:id", async (req, res) => {
-  try {
-    const updated = await Collection.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    );
-    res.json(updated);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
+    // clear cache
+    cache.flushAll();
 
-// Delete entry
-app.delete("/api/collections/:id", async (req, res) => {
-  try {
-    await Collection.findByIdAndDelete(req.params.id);
     res.json({ message: "Deleted successfully" });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error("❌ Delete error:", err);
+    res.status(500).json({ error: "Error deleting entry" });
   }
 });
 
-// 🔹 Start Server
-const PORT = process.env.PORT || 5002;
+// ===============================
+// 🌍 Start Server
+// ===============================
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
