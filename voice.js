@@ -1,45 +1,90 @@
-// // voice.js
-// import express from "express";
-// import fetch from "node-fetch";
-// import cors from "cors";
+// server.js
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+require('dotenv').config();
 
-// const app = express();
-// app.use(express.json());
-// app.use(cors());
+const app = express();
+const PORT = process.env.PORT || 5000;
+const MONGO_URI = process.env.MONGO_URI;
 
-// // Replace with your Narakeet API Key
-// const API_KEY = "YOUR_NARAKEET_API_KEY";
+// Middleware
+app.use(cors());
+app.use(express.json());
 
-// app.post("/api/voice", async (req, res) => {
-//   try {
-//     const { text } = req.body;
+// MongoDB Schema
+const userSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  designation: String,
+  location: String,
+  remarks: String,
+  sales: { type: Number, default: 0 },
+  collection: { type: Number, default: 0 },
+  salary: { type: Map, of: Number }, // e.g., { "2025-07": 5000 }
+  attendance: { type: Map, of: String }, // e.g., { "2025-07-19": "present" }
+});
 
-//     const response = await fetch("https://api.narakeet.com/v1/text-to-speech", {
-//       method: "POST",
-//       headers: {
-//         "Content-Type": "application/json",
-//         "Authorization": `Bearer ${API_KEY}`,
-//       },
-//       body: JSON.stringify({
-//         text: text,
-//         voice: "Harsh",
-//         lang: "hi-IN",
-//         format: "mp3",
-//       }),
-//     });
+const User = mongoose.model('User', userSchema);
 
-//     if (!response.ok) {
-//       const error = await response.text();
-//       return res.status(500).send(error);
-//     }
+// Routes
 
-//     const audioBuffer = await response.arrayBuffer();
-//     res.set("Content-Type", "audio/mpeg");
-//     res.send(Buffer.from(audioBuffer));
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).send("Server Error");
-//   }
-// });
+// Health check
+app.get('/', (req, res) => {
+  res.send('🟢 User Attendance API is running');
+});
 
-// app.listen(3000, () => console.log("Server running on port 3000"));
+// Get all users
+app.get('/api/users', async (req, res) => {
+  try {
+    const users = await User.find();
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: 'Server Error' });
+  }
+});
+
+// Add user
+app.post('/api/users', async (req, res) => {
+  try {
+    const newUser = new User(req.body);
+    await newUser.save();
+    res.status(201).json(newUser);
+  } catch (err) {
+    res.status(400).json({ error: 'Failed to create user', details: err.message });
+  }
+});
+
+// Update user
+app.put('/api/users/:id', async (req, res) => {
+  try {
+    const updatedUser = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!updatedUser) return res.status(404).json({ error: 'User not found' });
+    res.json(updatedUser);
+  } catch (err) {
+    res.status(400).json({ error: 'Failed to update user', details: err.message });
+  }
+});
+
+// Delete user
+app.delete('/api/users/:id', async (req, res) => {
+  try {
+    const deleted = await User.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'User not found' });
+    res.json({ message: 'User deleted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Server Error' });
+  }
+});
+
+// Connect to MongoDB and start server
+mongoose.connect(MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => {
+  console.log('✅ Connected to MongoDB');
+  app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+})
+.catch(err => {
+  console.error('❌ MongoDB connection error:', err);
+});
