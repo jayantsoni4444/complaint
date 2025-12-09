@@ -10,7 +10,7 @@ app.use(cors());
 app.use(express.json());
 
 // 🔹 Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI || "mongodb://localhost:27017/serialDB", {
+mongoose.connect(process.env.MONGODB_URI || "mongodb://localhost:27017/serialDB", {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
