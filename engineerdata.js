@@ -56,6 +56,10 @@ const roundSchema = new mongoose.Schema({
 
   problem: { type: String, default: "" },
   actionTaken: { type: String, default: "" },
+  serial: { type: String, default: "" },
+  otp: { type: String, default: "" },
+  dop: { type: String, default: "" },
+  invoice: { type: String, default: "" },
 
   time: {
     type: String,
@@ -168,4 +172,3 @@ app.delete("/tasks/:taskId", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🔥 Server running on port ${PORT}`);
 });
-
